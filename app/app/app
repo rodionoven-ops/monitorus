@@ -37,6 +37,44 @@ REQUIREMENT_WEIGHTS = {
 }
 
 # =====================================
+# СЛОВАРЬ ПОРТОВ И ИХ АЛЬТЕРНАТИВНЫЕ НАЗВАНИЯ
+# =====================================
+
+PORT_ALIASES = {
+    "HDMI": [
+        "hdmi", "hdmi2", "hdmi1", "hdmi-1", "hdmi-2",
+        "hdmi 1", "hdmi 2", "hdmi a", "hdmi b",
+        "highspeed multimedia interface", "мультимедиа hdmi"
+    ],
+    "VGA": [
+        "vga", "vga1", "vga2", "vga-1", "vga-2",
+        "d-sub", "dsub", "rgb", "аналоговый", "аналог",
+        "15-pin", "разъем d-sub", "vga (d-sub)"
+    ],
+    "DP": [
+        "displayport", "display port", "dp", "mdp",
+        "mini displayport", "minidp", "mini-dp",
+        "dp 1.2", "dp 1.4", "дисплейпорт",
+        "display-port", "thunderbolt", "usb-c (видео)"
+    ],
+    "USB": [
+        "usb", "usb2", "usb3", "usb 2", "usb 3",
+        "usb2.0", "usb3.0", "usb3.1", "usb-a",
+        "usb type-a", "юсб", "downstream"
+    ],
+    "USB-C": [
+        "usb-c", "usb c", "usb type-c", "type-c",
+        "usb type c", "type c", "usb-c с видео",
+        "usb-c (dp alt mode)", "альтернативный режим",
+        "thunderbolt 3", "thunderbolt 4"
+    ],
+    "Thunderbolt": [
+        "thunderbolt", "thunderbolt 3", "thunderbolt 4",
+        "thunderbolt3", "thunderbolt4", "tbt"
+    ]
+}
+
+# =====================================
 # ЗАГРУЗКА ФАЙЛОВ
 # =====================================
 
@@ -410,47 +448,103 @@ specific_models = parse_specific_models(normalized_tz)
 try:
     config = pd.read_excel(config_file)
     logger.info(f"Конфигуратор загружен: {len(config)} моделей")
-    # Выводим названия колонок для отладки
     logger.info(f"Колонки в конфигураторе: {list(config.columns)}")
 except Exception as e:
     logger.error(f"Ошибка при загрузке конфигуратора: {e}")
     config = pd.DataFrame()
 
 # =====================================
-# ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ПОРТОВ
+# СУПЕРУМНАЯ ФУНКЦИЯ ПРОВЕРКИ ПОРТОВ
 # =====================================
 
-def check_port_in_config(row, port_name):
-    """Проверяет наличие порта в строке конфигуратора"""
+def check_port_in_config_advanced(row, port_name):
+    """
+    Суперумная проверка наличия порта в строке конфигуратора
+    Проверяет:
+    1. Прямые названия портов в названиях колонок
+    2. Значения в ячейках (строки, числа, логические)
+    3. Комбинированные колонки типа "HDMI/VGA"
+    4. Числовые значения (если > 0, значит порт есть)
+    5. Текстовые маркеры (да, нет, yes, no, true, false, есть, отсутствует)
+    6. Все альтернативные названия портов
+    7. Фильтрует ложные срабатывания (HDMI не путает с USB-HDMI кабелем)
+    """
     
-    # Проверяем различные варианты названия колонок
-    possible_columns = [
-        port_name,
-        f"{port_name} количество",
-        f"{port_name}s",
-        f"Количество {port_name}",
-        f"Кол-во {port_name}",
-    ]
+    port_name_lower = port_name.lower()
+    port_aliases_lower = [alias.lower() for alias in PORT_ALIASES.get(port_name, [])]
     
-    # Проверяем все текстовые колонки на наличие названия порта
+    # Проходим по всем колонкам
     for col in config.columns:
-        if port_name.lower() in col.lower():
-            value = safe_get(row.get(col, "0"), "0")
-            value_str = str(value).lower().strip()
+        col_lower = col.lower()
+        
+        # ПРОВЕРКА 1: Есть ли названия портов в названии колонки
+        if port_name_lower in col_lower or any(alias in col_lower for alias in port_aliases_lower):
+            value = safe_get(row.get(col, ""), "")
             
             # Проверяем значение
-            if value_str not in ["0", "нет", "no", "false", "", "nan", "none"]:
-                logger.debug(f"Найден {port_name} в колонке '{col}': {value}")
+            if check_port_value(value):
+                logger.debug(f"[{port_name}] Найден в названии колонки '{col}': {value}")
+                return True
+        
+        # ПРОВЕРКА 2: Проверяем значения в ячейке
+        value = safe_get(row.get(col, ""), "")
+        value_str = str(value).lower().strip()
+        
+        # Если значение содержит название порта и это не "нет"
+        if port_name_lower in value_str or any(alias in value_str for alias in port_aliases_lower):
+            # Фильтруем ложные срабатывания
+            if not any(neg in value_str for neg in ["нет", "no", "отсутствует", "отсутств", "false", "0", "-", "без"]):
+                logger.debug(f"[{port_name}] Найден в значении '{col}': {value}")
                 return True
     
-    # Если ничего не найдено, ищем само слово "порт" и название порта рядом
-    for col in config.columns:
-        value = str(safe_get(row.get(col, ""), "")).lower()
-        if port_name.lower() in value:
-            logger.debug(f"Найден {port_name} в значении колонки '{col}': {value}")
-            return True
+    # ПРОВЕРКА 3: Ищем в составных колонках типа "HDMI/VGA" или "HDMI, VGA"
+    all_text = " ".join([str(safe_get(row.get(col, ""), "")).lower() for col in config.columns])
+    
+    # Проверяем паттерны типа "HDMI/VGA", "HDMI, VGA", "HDMI+VGA"
+    if port_name_lower in all_text:
+        # Проверяем, не идет ли после "нет" или минуса
+        parts = all_text.split(port_name_lower)
+        if len(parts) > 1:
+            context_before = parts[0][-10:] if len(parts[0]) >= 10 else parts[0]
+            context_after = parts[1][:10] if len(parts[1]) >= 10 else parts[1]
+            
+            if not any(neg in context_before.lower() for neg in ["без", "нет", "no", "отсут", "false"]):
+                logger.debug(f"[{port_name}] Найден в составном значении")
+                return True
     
     return False
+
+
+def check_port_value(value):
+    """Проверяет, указывает ли значение на наличие порта"""
+    if value == "":
+        return False
+    
+    value_str = str(value).lower().strip()
+    
+    # Отрицательные значения
+    negative_indicators = ["нет", "no", "false", "0", "-", "отсутствует", "отсутств", "без", "none", "null", "nan"]
+    if any(neg in value_str for neg in negative_indicators):
+        return False
+    
+    # Положительные значения
+    positive_indicators = ["да", "yes", "true", "1", "есть", "имеется", "наличие", "+", "✓", "v"]
+    if any(pos in value_str for pos in positive_indicators):
+        return True
+    
+    # Если это число > 0, значит порт есть
+    try:
+        num_value = float(value_str)
+        return num_value > 0
+    except:
+        pass
+    
+    # Если в значении просто название порта без отрицания, считаем что порт есть
+    if len(value_str) > 2:
+        return True
+    
+    return False
+
 
 # =====================================
 # СРАВНЕНИЕ С ВЗВЕШИВАНИЕМ
@@ -523,14 +617,14 @@ for idx, row in config.iterrows():
             logger.debug(f"Ошибка при проверке разрешения {idx}: {e}")
             details.append("Разрешение: ✗ (ошибка)")
     
-    # Порты - УЛУЧШЕННАЯ ПРОВЕРКА
+    # Порты - СУПЕРУМНАЯ ПРОВЕРКА
     ports_to_check = {k: v for k, v in requirements.items() if k in ["HDMI", "VGA", "DP", "USB", "USB-C", "Thunderbolt"]}
     for port in ports_to_check:
         weight = REQUIREMENT_WEIGHTS.get(port, 0.5)
         total_weight += weight
         
         try:
-            has_port = check_port_in_config(row, port)
+            has_port = check_port_in_config_advanced(row, port)
             
             if has_port:
                 score += weight
@@ -686,7 +780,7 @@ if len(result_df) > 0:
         # Порты
         ports_to_check = {k: v for k, v in requirements.items() if k in ["HDMI", "VGA", "DP", "USB", "USB-C", "Thunderbolt"]}
         for port in ports_to_check:
-            has_port = check_port_in_config(best_row, port)
+            has_port = check_port_in_config_advanced(best_row, port)
             status = "✓" if has_port else "✗"
             comparison_data.append({
                 "Характеристика": port,
