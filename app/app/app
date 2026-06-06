@@ -592,16 +592,127 @@ print("ИНФОРМАЦИЯ ПО ЗАКАЗУ")
 print("="*120)
 print(f"Заказчик: {customer_name}\n")
 
-print("="*120)
-print("ТРЕБОВАНИЯ ЗАКАЗЧИКА")
-print("="*120)
+# =====================================
+# ТАБЛИЦА СРАВНЕНИЯ ТРЕБОВАНИЙ
+# =====================================
 
-for k, v in requirements.items():
-    if k != "Заказчик":
-        weight = REQUIREMENT_WEIGHTS.get(k, 1.0)
-        print(f"  {k}: {v} (вес: {weight})")
+print("="*120)
+print("ТРЕБОВАНИЯ ЗАКАЗЧИКА vs КОНФИГУРАТОР")
+print("="*120 + "\n")
 
-print(f"\nВсего требований: {len(requirements) - 1}")
+# Берем первый найденный монитор для сравнения (с наибольшим совпадением)
+if len(result_df) > 0:
+    best_model_name = result_df.iloc[0]["Модель"]
+    best_model_data = config[config["Модель монитора"] == best_model_name]
+    
+    if len(best_model_data) > 0:
+        best_row = best_model_data.iloc[0]
+        
+        # Создаем таблицу сравнения
+        comparison_data = []
+        
+        # Размер экрана
+        if "Размер экрана" in requirements:
+            req_value = requirements["Размер экрана"]
+            config_value = safe_get(best_row.get("Размер экрана", ""), "N/A")
+            status = "✓" if str(config_value).replace('"', '').replace('"', '') else "✗"
+            comparison_data.append({
+                "Характеристика": "Размер экрана",
+                "Требование": f"{req_value}\"",
+                f"Модель: {best_model_name}": f"{config_value}",
+                "Статус": status
+            })
+        
+        # Тип матрицы
+        if "Тип матрицы" in requirements:
+            req_value = requirements["Тип матрицы"]
+            config_value = safe_get(best_row.get("Тип матрицы", ""), "N/A")
+            status = "✓" if str(config_value).upper() == req_value.upper() else "✗"
+            comparison_data.append({
+                "Характеристика": "Тип матрицы",
+                "Требование": req_value,
+                f"Модель: {best_model_name}": config_value,
+                "Статус": status
+            })
+        
+        # Разрешение
+        if "Разрешение" in requirements:
+            req_value = requirements["Разрешение"]
+            config_value = safe_get(best_row.get("Разрешение", ""), "N/A")
+            status = "✓" if req_value.replace("x", "").replace("×", "") in str(config_value).replace("x", "").replace("×", "") else "✗"
+            comparison_data.append({
+                "Характеристика": "Разрешение",
+                "Требование": req_value,
+                f"Модель: {best_model_name}": config_value,
+                "Статус": status
+            })
+        
+        # Порты
+        ports_to_check = {k: v for k, v in requirements.items() if k in ["HDMI", "VGA", "DP", "USB", "USB-C", "Thunderbolt"]}
+        for port in ports_to_check:
+            port_column = f"{port} количество" if f"{port} количество" in config.columns else port
+            config_value = safe_get(best_row.get(port_column, "0"), "0")
+            has_port = str(config_value).lower() not in ["0", "нет", "no", "false", ""]
+            status = "✓" if has_port else "✗"
+            comparison_data.append({
+                "Характеристика": port,
+                "Требование": "Требуется",
+                f"Модель: {best_model_name}": "Есть" if has_port else "Нет",
+                "Статус": status
+            })
+        
+        # Яркость
+        if "Яркость" in requirements:
+            req_value = requirements["Яркость"]
+            config_value = safe_get(best_row.get("Яркость", 0), 0)
+            try:
+                config_value = int(config_value)
+                status = "✓" if config_value >= req_value * 0.9 else "✗"
+            except:
+                status = "✗"
+            comparison_data.append({
+                "Характеристика": "Яркость",
+                "Требование": f"{req_value} nits",
+                f"Модель: {best_model_name}": f"{config_value} nits",
+                "Статус": status
+            })
+        
+        # Контрастность
+        if "Контрастность" in requirements:
+            req_value = requirements["Контрастность"]
+            config_value = safe_get(best_row.get("Контрастность", "0"), "0")
+            try:
+                config_contrast = int(str(config_value).split(":")[-1])
+                status = "✓" if config_contrast >= req_value * 0.9 else "✗"
+            except:
+                status = "✗"
+            comparison_data.append({
+                "Характеристика": "Контрастность",
+                "Требование": f"1:{req_value}",
+                f"Модель: {best_model_name}": config_value,
+                "Статус": status
+            })
+        
+        # Частота обновления
+        if "Частота обновления" in requirements:
+            req_value = requirements["Частота обновления"]
+            config_value = safe_get(best_row.get("Частота обновления", 0), 0)
+            try:
+                config_refresh = int(str(config_value).split()[0])
+                status = "✓" if config_refresh >= req_value else "✗"
+            except:
+                status = "✗"
+            comparison_data.append({
+                "Характеристика": "Частота обновления",
+                "Требование": f"{req_value} Hz",
+                f"Модель: {best_model_name}": f"{config_value} Hz",
+                "Статус": status
+            })
+        
+        # Создаем DataFrame из таблицы сравнения
+        comparison_df = pd.DataFrame(comparison_data)
+        print(comparison_df.to_string(index=False))
+        print()
 
 # =====================================
 # ВЫВОД КОНКРЕТНЫХ МОДЕЛЕЙ
