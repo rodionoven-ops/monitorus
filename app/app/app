@@ -410,9 +410,47 @@ specific_models = parse_specific_models(normalized_tz)
 try:
     config = pd.read_excel(config_file)
     logger.info(f"Конфигуратор загружен: {len(config)} моделей")
+    # Выводим названия колонок для отладки
+    logger.info(f"Колонки в конфигураторе: {list(config.columns)}")
 except Exception as e:
     logger.error(f"Ошибка при загрузке конфигуратора: {e}")
     config = pd.DataFrame()
+
+# =====================================
+# ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ПОРТОВ
+# =====================================
+
+def check_port_in_config(row, port_name):
+    """Проверяет наличие порта в строке конфигуратора"""
+    
+    # Проверяем различные варианты названия колонок
+    possible_columns = [
+        port_name,
+        f"{port_name} количество",
+        f"{port_name}s",
+        f"Количество {port_name}",
+        f"Кол-во {port_name}",
+    ]
+    
+    # Проверяем все текстовые колонки на наличие названия порта
+    for col in config.columns:
+        if port_name.lower() in col.lower():
+            value = safe_get(row.get(col, "0"), "0")
+            value_str = str(value).lower().strip()
+            
+            # Проверяем значение
+            if value_str not in ["0", "нет", "no", "false", "", "nan", "none"]:
+                logger.debug(f"Найден {port_name} в колонке '{col}': {value}")
+                return True
+    
+    # Если ничего не найдено, ищем само слово "порт" и название порта рядом
+    for col in config.columns:
+        value = str(safe_get(row.get(col, ""), "")).lower()
+        if port_name.lower() in value:
+            logger.debug(f"Найден {port_name} в значении колонки '{col}': {value}")
+            return True
+    
+    return False
 
 # =====================================
 # СРАВНЕНИЕ С ВЗВЕШИВАНИЕМ
@@ -485,17 +523,15 @@ for idx, row in config.iterrows():
             logger.debug(f"Ошибка при проверке разрешения {idx}: {e}")
             details.append("Разрешение: ✗ (ошибка)")
     
-    # Порты
+    # Порты - УЛУЧШЕННАЯ ПРОВЕРКА
     ports_to_check = {k: v for k, v in requirements.items() if k in ["HDMI", "VGA", "DP", "USB", "USB-C", "Thunderbolt"]}
     for port in ports_to_check:
         weight = REQUIREMENT_WEIGHTS.get(port, 0.5)
         total_weight += weight
         
         try:
-            port_column = f"{port} количество" if f"{port} количество" in config.columns else port
-            port_value = str(safe_get(row.get(port_column, ""), "0")).lower()
+            has_port = check_port_in_config(row, port)
             
-            has_port = port_value not in ["0", "нет", "no", "false", ""]
             if has_port:
                 score += weight
                 details.append(f"{port}: ✓")
@@ -650,9 +686,7 @@ if len(result_df) > 0:
         # Порты
         ports_to_check = {k: v for k, v in requirements.items() if k in ["HDMI", "VGA", "DP", "USB", "USB-C", "Thunderbolt"]}
         for port in ports_to_check:
-            port_column = f"{port} количество" if f"{port} количество" in config.columns else port
-            config_value = safe_get(best_row.get(port_column, "0"), "0")
-            has_port = str(config_value).lower() not in ["0", "нет", "no", "false", ""]
+            has_port = check_port_in_config(best_row, port)
             status = "✓" if has_port else "✗"
             comparison_data.append({
                 "Характеристика": port,
