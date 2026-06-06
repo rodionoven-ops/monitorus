@@ -1,0 +1,298 @@
+!pip install -q pandas openpyxl pdfplumber python-docx
+
+import pandas as pd
+import pdfplumber
+from docx import Document
+from google.colab import files
+import re
+
+# =====================================
+# ЗАГРУЗКА ФАЙЛОВ
+# =====================================
+
+print("1. Загрузите Конфигуратор Мониторус")
+config_file = list(files.upload().keys())[0]
+
+print("2. Загрузите ТЗ заказчика")
+tz_file = list(files.upload().keys())[0]
+
+# =====================================
+# ЧТЕНИЕ ТЗ
+# =====================================
+
+def read_pdf(path):
+
+    text = ""
+
+    with pdfplumber.open(path) as pdf:
+
+        for page in pdf.pages:
+
+            page_text = page.extract_text()
+
+            if page_text:
+                text += page_text + "\n"
+
+    return text
+
+
+def read_docx(path):
+
+    doc = Document(path)
+
+    text = ""
+
+    for p in doc.paragraphs:
+        text += p.text + "\n"
+
+    for table in doc.tables:
+
+        for row in table.rows:
+
+            text += " ".join(
+                cell.text
+                for cell in row.cells
+            )
+
+            text += "\n"
+
+    return text
+
+
+def read_xlsx(path):
+
+    text = ""
+
+    xls = pd.ExcelFile(path)
+
+    for sheet in xls.sheet_names:
+
+        df = pd.read_excel(
+            path,
+            sheet_name=sheet
+        )
+
+        text += df.astype(str).to_string()
+
+    return text
+
+
+# =====================================
+# ОПРЕДЕЛЕНИЕ ТИПА ТЗ
+# =====================================
+
+if tz_file.lower().endswith(".pdf"):
+    tz_text = read_pdf(tz_file)
+
+elif tz_file.lower().endswith(".docx"):
+    tz_text = read_docx(tz_file)
+
+else:
+    tz_text = read_xlsx(tz_file)
+
+# =====================================
+# ПОИСК ТРЕБОВАНИЙ
+# =====================================
+
+requirements = {}
+
+diag = re.search(
+    r'диагональ.*?(\d+[.,]?\d*)',
+    tz_text,
+    re.IGNORECASE
+)
+
+if diag:
+    requirements["Размер экрана"] = float(
+        diag.group(1).replace(",", ".")
+    )
+
+if "ips" in tz_text.lower():
+    requirements["Тип матрицы"] = "IPS"
+
+if "1920x1080" in tz_text.lower():
+    requirements["Разрешение"] = "1920x1080"
+
+if "hdmi" in tz_text.lower():
+    requirements["HDMI"] = True
+
+if "vga" in tz_text.lower():
+    requirements["VGA"] = True
+
+if "displayport" in tz_text.lower() or "dp" in tz_text.lower():
+    requirements["DP"] = True
+
+if "usb" in tz_text.lower():
+    requirements["USB"] = True
+
+# =====================================
+# ЗАГРУЗКА КОНФИГУРАТОРА
+# =====================================
+
+config = pd.read_excel(config_file)
+
+# =====================================
+# СРАВНЕНИЕ
+# =====================================
+
+results = []
+
+for idx, row in config.iterrows():
+
+    score = 0
+    total = 0
+
+    details = []
+
+    # Размер экрана
+
+    if "Размер экрана" in requirements:
+
+        total += 1
+
+        try:
+
+            screen = str(
+                row["Размер экрана"]
+            )
+
+            screen = screen.replace('"', '')
+
+            screen = float(screen)
+
+            if screen >= requirements["Размер экрана"]:
+
+                score += 1
+
+                details.append(
+                    "Размер экрана: Да"
+                )
+
+            else:
+
+                details.append(
+                    "Размер экрана: Нет"
+                )
+
+        except:
+
+            details.append(
+                "Размер экрана: Нет"
+            )
+
+    # Матрица
+
+    if "Тип матрицы" in requirements:
+
+        total += 1
+
+        if str(
+            row["Тип матрицы"]
+        ).upper() == "IPS":
+
+            score += 1
+
+            details.append(
+                "Матрица: Да"
+            )
+
+        else:
+
+            details.append(
+                "Матрица: Нет"
+            )
+
+    # Разрешение
+
+    if "Разрешение" in requirements:
+
+        total += 1
+
+        if "1920" in str(
+            row["Разрешение"]
+        ):
+
+            score += 1
+
+            details.append(
+                "Разрешение: Да"
+            )
+
+        else:
+
+            details.append(
+                "Разрешение: Нет"
+            )
+
+    percent = 0
+
+    if total > 0:
+
+        percent = round(
+            score / total * 100,
+            2
+        )
+
+    results.append({
+
+        "Модель":
+        row["Модель монитора"],
+
+        "Совпадение %":
+        percent,
+
+        "Подробности":
+        "; ".join(details)
+    })
+
+# =====================================
+# РЕЗУЛЬТАТ
+# =====================================
+
+result_df = pd.DataFrame(
+    results
+)
+
+result_df = result_df.sort_values(
+    "Совпадение %",
+    ascending=False
+)
+
+print("\n")
+print("="*80)
+print("ТРЕБОВАНИЯ")
+print("="*80)
+
+for k, v in requirements.items():
+
+    print(k, ":", v)
+
+print("\n")
+print("="*80)
+print("ЛУЧШИЕ МОДЕЛИ")
+print("="*80)
+
+print(
+    result_df.head(10)
+)
+
+# =====================================
+# EXCEL
+# =====================================
+
+output_file = "Результат_сравнения.xlsx"
+
+with pd.ExcelWriter(
+    output_file,
+    engine="openpyxl"
+) as writer:
+
+    result_df.to_excel(
+        writer,
+        sheet_name="Итоги",
+        index=False
+    )
+
+files.download(
+    output_file
+)
