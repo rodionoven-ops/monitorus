@@ -12,36 +12,29 @@ import requests
 # =====================================
 # НАСТРОЙКА ЛОГИРОВАНИЯ
 # =====================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(levelname)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 # =====================================
 # КОНФИГ ВЕСОВ ТРЕБОВАНИЙ И ПОРТОВ
 # =====================================
-
 REQUIREMENT_WEIGHTS = {
     "Размер экрана": 1.5, "Тип матрицы": 1.0, "Разрешение": 1.5,
-    "HDMI": 0.8, "VGA": 0.5, "DP": 0.8, "USB": 0.7, "USB-C": 1.0, "Thunderbolt": 0.6,
-    "Яркость": 1.0, "Контрастность": 0.8, "Частота обновления": 1.2
+    "HDMI": 0.8, "VGA": 0.5, "DP": 0.8, "USB": 0.7, "USB-C": 1.0, "Thunderbolt": 0.6
 }
 
 PORT_ALIASES = {
-    "HDMI": ["hdmi", "hdmi2", "hdmi1", "hdmi-1", "hdmi-2", "hdmi 1", "hdmi 2", "highspeed multimedia interface"],
-    "VGA": ["vga", "vga1", "vga2", "d-sub", "dsub", "rgb", "аналоговый", "15-pin", "vga (d-sub)"],
+    "HDMI": ["hdmi", "hdmi2", "hdmi1", "hdmi-1", "hdmi-2", "hdmi 1", "hdmi 2"],
+    "VGA": ["vga", "vga1", "vga2", "d-sub", "dsub", "rgb", "15-pin", "vga (d-sub)"],
     "DP": ["displayport", "display port", "dp", "mdp", "mini displayport", "minidp", "дисплейпорт"],
-    "USB": ["usb", "usb2", "usb3", "usb 2", "usb 3", "usb2.0", "usb3.0", "usb-a", "usb type-a", "юсб"],
-    "USB-C": ["usb-c", "usb c", "usb type-c", "type-c", "type c", "usb-c с видео", "usb-c (dp alt mode)"],
+    "USB": ["usb", "usb2", "usb3", "usb 2", "usb 3", "usb2.0", "usb3.0", "usb-a", "usb type-a"],
+    "USB-C": ["usb-c", "usb c", "usb type-c", "type-c", "type c", "usb-c (dp alt mode)"],
     "Thunderbolt": ["thunderbolt", "thunderbolt 3", "thunderbolt 4", "tbt"]
 }
 
 # =====================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ПРОВЕРКИ
 # =====================================
-
 def safe_get(value, default=None):
     try:
         if pd.isna(value): return default
@@ -56,10 +49,8 @@ def check_port_value(value):
         return False
     if any(pos in value_str for pos in ["да", "yes", "true", "1", "есть", "имеется", "наличие", "+", "✓"]):
         return True
-    try:
-        return float(value_str) > 0
-    except:
-        pass
+    try: return float(value_str) > 0
+    except: pass
     return len(value_str) > 2
 
 def check_port_in_config_advanced(row, port_name, config_columns):
@@ -69,18 +60,15 @@ def check_port_in_config_advanced(row, port_name, config_columns):
     for col in config_columns:
         col_lower = col.lower()
         if port_name_lower in col_lower or any(alias in col_lower for alias in port_aliases_lower):
-            if check_port_value(safe_get(row.get(col, ""), "")):
-                return True
+            if check_port_value(safe_get(row.get(col, ""), "")): return True
         value_str = str(safe_get(row.get(col, ""), "")).lower().strip()
         if port_name_lower in value_str or any(alias in value_str for alias in port_aliases_lower):
-            if not any(neg in value_str for neg in ["нет", "no", "отсутствует", "false", "0", "-", "без"]):
-                return True
+            if not any(neg in value_str for neg in ["нет", "no", "отсутствует", "false", "0", "-", "без"]): return True
     return False
 
 # =====================================
 # ПАРСИНГ ТЗ (ПДФ, ВОРД, ЭКСЕЛЬ)
 # =====================================
-
 def read_pdf(path):
     text = ""
     with pdfplumber.open(path) as pdf:
@@ -106,35 +94,30 @@ def read_xlsx(path):
     return text
 
 # =====================================
-# ШАГ 1: ЗАГРУЗКА ТАБЛИЦЫ ПО ОБНОВЛЕННОЙ ССЫЛКЕ
+# ШАГ 1: ЗАГРУЗКА ТАБЛИЦЫ
 # =====================================
-
-user_link = "https://docs.google.com/spreadsheets/d/1TIjClTnVJVyICYWitESeoBXvBJnzRhwNuzGsmfuMgjg/edit?usp=sharing"
-
-# Извлекаем ID таблицы и ID листа напрямую из предоставленной вами ссылки
 SPREADSHEET_ID = "1TIjClTnVJVyICYWitESeoBXvBJnzRhwNuzGsmfuMgjg"
 GID = "223697861"
 export_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={GID}"
 
-print("📥 Шаг 1: Подключение к Google Sheets по новой ссылке общего доступа...")
+print("📥 Шаг 1: Импорт конфигуратора из Google Sheets...")
 config = pd.DataFrame()
 
 try:
     response = requests.get(export_url)
     if response.status_code == 200:
         config = pd.read_csv(io.StringIO(response.text))
-        print(f"✅ Успешно! База конфигуратора загружена напрямую из облака. Моделей обнаружено: {len(config)}")
+        print(f"✅ База успешно загружена. Всего моделей на выбор: {len(config)}")
     else:
-        print(f"❌ Не удалось скачать данные. Статус ответа сервера Google: {response.status_code}")
+        print(f"❌ Не удалось получить данные. Статус: {response.status_code}")
 except Exception as e:
-    print(f"🚨 Ошибка при обработке ссылки: {str(e)}")
+    print(f"🚨 Ошибка: {str(e)}")
 
 # =====================================
-# ШАГ 2: ЗАГРУЗКА И АНАЛИЗ ТЗ ЗАКАЗЧИКА
+# ШАГ 2: ОБРАБОТКА ТЗ И ВЫВОД ВСЕЙ ИНФОРМАЦИИ
 # =====================================
-
 if not config.empty:
-    print("\n📥 Шаг 2: Отправьте файл ТЗ (поддерживаются форматы PDF, DOCX, XLSX)")
+    print("\n📥 Шаг 2: Загрузите файл ТЗ заказчика (PDF, DOCX, XLSX)")
     tz_file = list(files.upload().keys())[0]
 
     try:
@@ -142,47 +125,49 @@ if not config.empty:
         elif tz_file.lower().endswith(".docx"): tz_text = read_docx(tz_file)
         else: tz_text = read_xlsx(tz_file)
     except Exception as e:
-        print(f"❌ Ошибка парсинга файла ТЗ: {e}")
+        print(f"❌ Ошибка чтения файла ТЗ: {e}")
         tz_text = ""
 
     normalized_tz = tz_text.lower().replace('"', '"').replace('"', '"')
 
-    # Функции регулярных выражений
+    # Поиск параметров
     def parse_customer_name(text):
-        m = re.search(r'(?:заказчик|компания|организация)\s*[:\-]?\s*([^\n]+)', text, re.I)
-        return m.group(1).strip() if m else "Не указан"
+        m = re.search(r'(?:заказчик|компания|организация|ооо|ао)\s*[:\-]?\s*([^\n]+)', text, re.I)
+        return m.group(1).strip() if m else "Не указан (Частное лицо / Прямой тендер)"
 
     def parse_screen_size(text):
         m = re.search(r'(?:диагональ|размер экрана)\s*[:\-]?\s*(\d+[.,]?\d*)\s*"?|(\d+[.,]?\d*)\s*(?:дюйм|inch|\")', text, re.I)
-        if m:
-            val = m.group(1) or m.group(2)
-            return float(val.replace(",", "."))
-        return None
+        return float((m.group(1) or m.group(2)).replace(",", ".")) if m else None
 
     def parse_matrix_type(text):
         for t in ["IPS", "VA", "TN", "OLED"]:
             if re.search(r'\b' + t.lower() + r'\b', text): return t
-        return None
+        return "Не критично"
 
     def parse_resolution(text):
         m = re.search(r'(\d{3,4})\s*[x×]\s*(\d{3,4})', text)
-        return f"{m.group(1)}x{m.group(2)}" if m else None
+        return f"{m.group(1)}x{m.group(2)}" if m else "Не указано"
 
-    # Построение профиля требований
-    requirements = {
-        "Заказчик": parse_customer_name(normalized_tz),
-        "Размер экрана": parse_screen_size(normalized_tz),
-        "Тип матрицы": parse_matrix_type(normalized_tz),
-        "Разрешение": parse_resolution(normalized_tz)
-    }
-    requirements = {k: v for k, v in requirements.items() if v is not None or k == "Заказчик"}
+    # Сбор и вывод ТЗ на экран
+    customer = parse_customer_name(normalized_tz)
+    screen_req = parse_screen_size(normalized_tz)
+    matrix_req = parse_matrix_type(normalized_tz)
+    res_req = parse_resolution(normalized_tz)
+    
+    req_ports = [p for p in ["HDMI", "VGA", "DP", "USB", "USB-C", "Thunderbolt"] if re.search(r'\b' + p.lower() + r'\b', normalized_tz)]
 
-    for p in ["HDMI", "VGA", "DP", "USB", "USB-C", "Thunderbolt"]:
-        if re.search(r'\b' + p.lower() + r'\b', normalized_tz):
-            requirements[p] = True
+    print("\n" + "═"*90)
+    print(" 📋 [ПОЛНАЯ ИНФОРМАЦИЯ О СТРУКТУРЕ ЗАКАЗА / ТЕХНИЧЕСКОМУ ЗАДАНИЮ]")
+    print("═"*90)
+    print(f" 🔹 Заказчик/Организация: {customer.upper()}")
+    print(f" 🔹 Требуемая диагональ:  {f'{screen_req} дюймов' if screen_req else 'Не задана строго'}")
+    print(f" 🔹 Тип матрицы:          {matrix_req}")
+    print(f" 🔹 Минимальное разрешение: {res_req}")
+    print(f" 🔹 Обязательные порты:   {', '.join(req_ports) if req_ports else 'Не критично (любые)'}")
+    print("═"*90)
 
     # =====================================
-    # ВЗВЕШЕННЫЙ СКОРИНГ АССОРТИМЕНТА
+    # СКОРИНГ И СРАВНЕНИЕ
     # =====================================
     results = []
     config_cols = list(config.columns)
@@ -190,66 +175,69 @@ if not config.empty:
     for idx, row in config.iterrows():
         score = 0
         total_weight = 0
-        details = []
+        match_details = []
+        miss_details = []
         
         model_col = next((c for c in config_cols if "модель" in c.lower()), config_cols[0])
         model_name = safe_get(row.get(model_col, ""), f"Строка {idx+2}")
 
-        if "Размер экрана" in requirements:
+        if screen_req:
             total_weight += REQUIREMENT_WEIGHTS["Размер экрана"]
             col = next((c for c in config_cols if "размер" in c.lower() or "диагональ" in c.lower()), None)
             if col:
                 try:
                     val = float(str(row[col]).replace('"', '').strip())
-                    if val >= requirements["Размер экрана"] * 0.95:
+                    if val >= screen_req * 0.95:
                         score += REQUIREMENT_WEIGHTS["Размер экрана"]
-                        details.append("Размер: ✓")
-                    else: details.append("Размер: ✗")
-                except: details.append("Размер: ?")
+                        match_details.append(f"Экран {val}\"")
+                    else: miss_details.append(f"Экран меньше ({val}\")")
+                except: miss_details.append("Экран: опечатка в базе")
 
-        if "Тип матрицы" in requirements:
+        if matrix_req != "Не критично":
             total_weight += REQUIREMENT_WEIGHTS["Тип матрицы"]
             col = next((c for c in config_cols if "матриц" in c.lower()), None)
-            if col and requirements["Тип матрицы"].upper() in str(row[col]).upper():
-                score += REQUIREMENT_WEIGHTS["Тип матрицы"]
-                details.append("Матрица: ✓")
-            else: details.append("Матрица: ✗")
+            if col:
+                val_m = str(row[col]).upper()
+                if matrix_req.upper() in val_m:
+                    score += REQUIREMENT_WEIGHTS["Тип матрицы"]
+                    match_details.append(f"Матрица {matrix_req}")
+                else: miss_details.append(f"Матрица {val_m}")
 
-        if "Разрешение" in requirements:
+        if res_req != "Не указано":
             total_weight += REQUIREMENT_WEIGHTS["Разрешение"]
             col = next((c for c in config_cols if "разрешен" in c.lower()), None)
-            if col and requirements["Разрешение"].replace("x","") in str(row[col]).lower().replace("x","").replace("×",""):
-                score += REQUIREMENT_WEIGHTS["Разрешение"]
-                details.append("Разрешение: ✓")
-            else: details.append("Разрешение: ✗")
+            if col:
+                val_r = str(row[col]).lower().replace("x","").replace("×","")
+                if res_req.replace("x","") in val_r:
+                    score += REQUIREMENT_WEIGHTS["Разрешение"]
+                    match_details.append(f"Разрешение {res_req}")
+                else: miss_details.append("Другое разрешение")
 
-        ports_to_check = [k for k in requirements if k in ["HDMI", "VGA", "DP", "USB", "USB-C", "Thunderbolt"]]
-        for port in ports_to_check:
+        for port in req_ports:
             total_weight += REQUIREMENT_WEIGHTS[port]
             if check_port_in_config_advanced(row, port, config_cols):
                 score += REQUIREMENT_WEIGHTS[port]
-                details.append(f"{port}: ✓")
-            else: details.append(f"{port}: ✗")
+                match_details.append(port)
+            else:
+                miss_details.append(f"Нет {port}")
 
-        percent = round((score / total_weight) * 100, 2) if total_weight > 0 else 0
+        percent = round((score / total_weight) * 100, 2) if total_weight > 0 else 100
         results.append({
-            "Модель": model_name, "Совпадение %": percent, "Детали": ", ".join(details)
+            "Модель": model_name,
+            "Совпадение %": percent,
+            "Совпало": ", ".join(match_details) if match_details else "Нет",
+            "Не совпало": ", ".join(miss_details) if miss_details else "Идеально"
         })
 
-    # =====================================
-    # ВЫВОД ИТОГОВОЙ СТАТИСТИКИ
-    # =====================================
+    # Вывод Топ-5 предложений с подробностями
     result_df = pd.DataFrame(results).sort_values("Совпадение %", ascending=False)
     
-    print("\n" + "═"*80)
-    print(f"📊 СТРАТЕГИЧЕСКИЙ ОТЧЕТ ДЛЯ ЗАКАЗЧИКА: {requirements['Заказчик'].upper()}")
-    print("═"*80)
-    print(f"🥇 ЛУЧШИЙ ВАРИАНТ: {result_df.iloc[0]['Модель']} ({result_df.iloc[0]['Совпадение %']}% соответствия ТЗ)")
-    print(f"🔍 Статус критических параметров лидера: {result_df.iloc[0]['Детали']}\n")
-    
-    print("📋 ТОП-5 ОПТИМАЛЬНЫХ МОДЕЛЕЙ ДЛЯ ВКЛЮЧЕНИЯ В КП:")
+    print("\n📈 [РЕЗУЛЬТАТЫ СРАВНЕНИЯ БАЗЫ С ТЗ — ТОП-5 МОДЕЛЕЙ ДЛЯ СНАБЖЕНИЯ]")
+    print("─"*90)
     for c, (i, r) in enumerate(result_df.head(5).iterrows(), 1):
-        print(f"  {c}. {r['Модель']:<40} | Процент совпадения: {r['Совпадение %']}%")
-    print("═"*80)
-else:
-    print("⚠️ Выполнение скрипта прервано. Проверьте статус подключения к сети.")
+        print(f" 🔥 {c} МЕСТО: {r['Модель']}")
+        print(f"    🎯 Процент соответствия: {r['Совпадение %']}%")
+        print(f"    🟢 Что подходит:         {r['Совпало']}")
+        print(f"    🔴 Ограничения/Промахи:  {r['Не совпало']}")
+        print("─"*90)
+    print("═"*90)
