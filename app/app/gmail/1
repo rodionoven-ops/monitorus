@@ -1,0 +1,120 @@
+!pip install -q pandas openpyxl pdfplumber python-docx
+
+import pandas as pd
+import pdfplumber
+from docx import Document
+from google.colab import files
+import imaplib
+import email
+from email.header import decode_header
+import re
+import logging
+from IPython.display import HTML, display
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
+
+# =====================================
+# ПОДКЛЮЧЕНИЕ К GMAIL ЧЕРЕЗ IMAPLIB
+# =====================================
+
+def connect_to_gmail_imaplib():
+    """Подключается к Gmail через встроенный imaplib"""
+    try:
+        print("\n" + "="*120)
+        print("ПОДКЛЮЧЕНИЕ К GMAIL ЧЕРЕЗ IMAPLIB")
+        print("="*120 + "\n")
+        
+        # Параметры Gmail
+        GMAIL_EMAIL = "shterenbergcorp@gmail.com"
+        GMAIL_PASSWORD = "Admin!Mail!2026"  # ИЛИ App Password
+        
+        # Подключаемся
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(GMAIL_EMAIL, GMAIL_PASSWORD)
+        
+        print(f"✅ Подключено к {GMAIL_EMAIL}\n")
+        return mail
+    
+    except imaplib.IMAP4.error as e:
+        print(f"❌ Ошибка подключения: {e}")
+        print("⚠️ Если используете обычный пароль, включите:")
+        print("   https://myaccount.google.com/apppasswords\n")
+        return None
+    except Exception as e:
+        print(f"❌ Ошибка: {e}\n")
+        return None
+
+# =====================================
+# ПОЛУЧЕНИЕ ПИСЕМ
+# =====================================
+
+def get_emails(mail, num_emails=3):
+    """Получает письма"""
+    try:
+        mail.select("INBOX")
+        
+        status, messages = mail.search(None, "ALL")
+        email_ids = messages[0].split()[-num_emails:]
+        
+        emails = []
+        
+        for email_id in email_ids:
+            status, msg_data = mail.fetch(email_id, "(RFC822)")
+            
+            for response_part in msg_data:
+                if isinstance(response_part, tuple):
+                    msg = email.message_from_bytes(response_part[1])
+                    
+                    subject = decode_header(msg.get("Subject", ""))[0]
+                    if isinstance(subject[0], bytes):
+                        subject_text = subject[0].decode(subject[1] or 'utf-8')
+                    else:
+                        subject_text = subject[0]
+                    
+                    sender = msg.get("From", "Unknown")
+                    
+                    body = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                body = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                    else:
+                        body = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+                    
+                    emails.append({
+                        'subject': subject_text,
+                        'sender': sender,
+                        'body': body
+                    })
+        
+        print(f"✅ Получено {len(emails)} писем\n")
+        return emails
+    
+    except Exception as e:
+        print(f"❌ Ошибка при получении писем: {e}\n")
+        return []
+
+# =====================================
+# ОСНОВНОЙ КОД
+# =====================================
+
+mail = connect_to_gmail_imaplib()
+
+if mail:
+    emails = get_emails(mail, num_emails=3)
+    
+    print("="*120)
+    print("НАЙДЕННЫЕ ПИСЬМА")
+    print("="*120 + "\n")
+    
+    for idx, email_data in enumerate(emails, 1):
+        print(f"📧 Письмо #{idx}")
+        print(f"   Тема: {email_data['subject']}")
+        print(f"   От: {email_data['sender']}")
+        print(f"   Текст (первые 200 символов): {email_data['body'][:200]}...\n")
+    
+    mail.close()
+    mail.logout()
+
+print("✅ Готово!")
